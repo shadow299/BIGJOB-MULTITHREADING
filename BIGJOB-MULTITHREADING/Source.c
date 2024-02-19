@@ -12,6 +12,7 @@
 
 typedef struct {
 	HWND hwnd;
+	HANDLE hEvent;
 	BOOL bContinue;
 } PARAMS, *PPARAMS;
 
@@ -70,22 +71,28 @@ void Thread(PVOID pvoid) {
 	volatile PPARAMS pparams;
 	pparams = (PPARAMS)pvoid;
 
-	lTime = GetCurrentTime();
-	for (i = 0; i < REP && pparams->bContinue; i++) {
-		a = tan(atan(exp(log(sqrt(a * a))))) + 1.0;
+	while (TRUE) {
+		WaitForSingleObject(pparams->hEvent, INFINITE);
+
+		lTime = GetCurrentTime();
+
+		for (i = 0; i < REP && pparams->bContinue; i++) {
+			a = tan(atan(exp(log(sqrt(a * a))))) + 1.0;
+		}
+		if (i == REP) {
+			lTime = GetCurrentTime() - lTime;
+
+			PostMessage(pparams->hwnd, WM_CALC_DONE, 0, lTime);
+		}
+		else {
+			PostMessage(pparams->hwnd, WM_CALC_ABORTED, 0, 0);
+		}
 	}
-	if (i == REP) {
-		lTime = GetCurrentTime() - lTime;
-		SendMessage(pparams->hwnd, WM_CALC_DONE, 0, lTime);
-	}
-	else {
-		SendMessage(pparams->hwnd, WM_CALC_ABORTED, 0, 0);
-	}
-	_endthread();
 }
 
 //handling window message
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	static HANDLE hEvent;
 	static int iStatus;
 	static long lTime;
 	static PARAMS params;
@@ -97,16 +104,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 	TCHAR szBuffer[64];
 
 	switch (message) {
+	case WM_CREATE:
+		hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+		params.hwnd = hwnd;
+		params.hEvent = hEvent;
+		params.bContinue = FALSE;
+
+		_beginthread(Thread, 0, &params);
+		return 0;
+
 	case WM_LBUTTONDOWN:
 		if (iStatus == STATUS_WORKING) {
 			MessageBeep(0);
 			return 0;
 		}
 		iStatus = STATUS_WORKING;
-		params.hwnd = hwnd;
 		params.bContinue = TRUE;
+		
+		SetEvent(hEvent);
 
-		_beginthread(Thread, 0, &params);
 		InvalidateRect(hwnd, NULL, TRUE);
 		return 0;
 
